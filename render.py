@@ -1,67 +1,78 @@
+import pygame
 import json
-import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
+import os
 
-# Load JSON
-with open("graph.json") as f:
+# === Load all graph data ===
+with open("synth_graphs.json") as f:
     data = json.load(f)
 
-vertices = data["vertices"]
-edges = data["edges"]
+# === Config ===
+OUTPUT_FOLDER = "renders"
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# Get exact dimensions from JSON
-img_width = data["img_width"]
-img_height = data["img_height"]
+BG_COLOR = (245, 245, 245)
+NODE_COLOR = (255, 192, 203)
+NODE_BORDER = (255, 105, 180)
+EDGE_COLOR = (128, 128, 128)
 
-# Create figure with exact resolution
-fig, ax = plt.subplots(figsize=(img_width / 100, img_height / 100), dpi=100)
+pygame.init()
+clock = pygame.time.Clock()
 
-# Draw edges first (beneath nodes)
-for e in edges:
-    v1 = next(v for v in vertices if v["id"] == e["relationship"][0])
-    v2 = next(v for v in vertices if v["id"] == e["relationship"][1])
+def render_graph(graph):
+    vertices = graph["vertices"]
+    edges = graph["connections"]
 
-    # Use actual vertex centers for edge endpoints
-    x1 = (v1["x"] + v1["width"] / 2) * img_width
-    y1 = (v1["y"] + v1["height"] / 2) * img_height
-    x2 = (v2["x"] + v2["width"] / 2) * img_width
-    y2 = (v2["y"] + v2["height"] / 2) * img_height
+    SCREEN_WIDTH = int(graph.get("img_width", 800))
+    SCREEN_HEIGHT = int(graph.get("img_height", 800))
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen.fill(BG_COLOR)
 
-    ax.plot([x1, x2], [y1, y2], color="gray", linewidth=2, alpha=0.7, zorder=1)
+    # Draw edges
+    for e in edges:
+        x = e["x"] * SCREEN_WIDTH
+        y = e["y"] * SCREEN_HEIGHT
+        w = e["width"] * SCREEN_WIDTH
+        h = e["height"] * SCREEN_HEIGHT
+        v1, v2 = e["relationship"]
 
-# Draw vertices
-for v in vertices:
-    center_x = (v["x"] + v["width"] / 2) * img_width
-    center_y = (v["y"] + v["height"] / 2) * img_height
-    radius = v["width"] * img_width / 2
+        from_top = vertices[v1]["y"] < vertices[v2]["y"] if vertices[v1]["x"] <= vertices[v2]["x"] else vertices[v1]["y"] > vertices[v2]["y"]
 
-    circle = Circle(
-        (center_x, center_y),
-        radius,
-        facecolor="lightblue",
-        edgecolor="darkblue",
-        linewidth=2,
-        zorder=2
-    )
-    ax.add_patch(circle)
+        if from_top:
+            start_pos = (x, y)
+            end_pos = (x + w, y + h)
+        else:
+            start_pos = (x, y + h)
+            end_pos = (x + w, y)
 
-    ax.text(
-        center_x, center_y, v["symbol"],
-        ha="center", va="center",
-        fontsize=12, color="black", weight="bold",
-        zorder=3
-    )
+        pygame.draw.line(screen, EDGE_COLOR, start_pos, end_pos, 2)
 
-# Set exact limits matching image dimensions
-ax.set_xlim(-(vertices[0]["width"] / 2) * img_width, img_width - (vertices[0]["width"] / 2) * img_width)
-ax.set_ylim(-(vertices[0]["height"] / 2) * img_height, img_height - (vertices[0]["height"] / 2) * img_height)
-ax.set_aspect("equal")
+    # Draw vertices
+    for v in vertices:
+        x = v["x"] * SCREEN_WIDTH
+        y = v["y"] * SCREEN_HEIGHT
+        w = v["width"] * SCREEN_WIDTH
+        h = v["height"] * SCREEN_HEIGHT
 
-# Flip y-axis to match typical coordinate systems
-ax.invert_yaxis()
-ax.axis("off")
+        # Node fill
+        pygame.draw.ellipse(screen, NODE_COLOR, pygame.Rect(x, y, w, h))
+        # Node border
+        pygame.draw.ellipse(screen, NODE_BORDER, pygame.Rect(x, y, w, h), 2)
 
-# Remove padding and save with exact dimensions
-plt.tight_layout(pad=0)
-plt.savefig("graph.png", dpi=100, bbox_inches='tight', pad_inches=0)
-plt.show()
+        # Symbol
+        font = pygame.font.SysFont("Arial", max(12, int(h * 0.8)))
+        text = font.render(v["symbol"], True, (0, 0, 0))
+        text_rect = text.get_rect(center=(x + w / 2, y + h / 2))
+        screen.blit(text, text_rect)
+
+    # Save rendered image
+    filename = os.path.join(OUTPUT_FOLDER, graph["filename"])
+    pygame.image.save(screen, filename)
+    print(f"✅ Saved: {filename}")
+
+# === Render all graphs ===
+for i, graph in enumerate(data):
+    render_graph(graph)
+    clock.tick(10)  # small delay between renders
+
+pygame.quit()
+print("🎉 All graphs saved in the 'renders/' folder!")
