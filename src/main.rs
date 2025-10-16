@@ -1,32 +1,36 @@
 use crate::synth::Plain;
 use rand::Rng;
 use std::time::Instant;
+use dotenvy::dotenv;
+use std::env;
 
 mod synth;
 
-const NUM_OF_SIM: usize = 5000;
-const MIN_REGIONS_RANGE: usize = 6;
-const MAX_REGIONS_RANGE: usize = 10;
-const MIN_REGION_SIZE: u16 = 32;
-const MAX_REGION_SIZE: u16 = 64;
-const MIN_VERTEX_COUNT: u16 = 4;
-const MAX_VERTEX_COUNT: u16 = 16;
-const MIN_NEIGHBOUR_COUNT: u16 = 2;
-const MAX_NEIGHBOUR_COUNT: u16 = 12;
-
 fn main() {
-    let mut results: Vec<Plain> = Vec::with_capacity(NUM_OF_SIM);
-    let mut rng = rand::rng();
+    dotenv().ok(); // load .env file automatically
 
+    let num_of_sim: usize = env::var("NUM_OF_SIM").unwrap().parse().unwrap();
+    let min_regions: usize = env::var("MIN_REGIONS_RANGE").unwrap().parse().unwrap();
+    let max_regions: usize = env::var("MAX_REGIONS_RANGE").unwrap().parse().unwrap();
+    let min_region_size: u16 = env::var("MIN_REGION_SIZE").unwrap().parse().unwrap();
+    let max_region_size: u16 = env::var("MAX_REGION_SIZE").unwrap().parse().unwrap();
+    let min_vertex_count: u16 = env::var("MIN_VERTEX_COUNT").unwrap().parse().unwrap();
+    let max_vertex_count: u16 = env::var("MAX_VERTEX_COUNT").unwrap().parse().unwrap();
+    let min_neighbour_count: u16 = env::var("MIN_NEIGHBOUR_COUNT").unwrap().parse().unwrap();
+    let max_neighbour_count: u16 = env::var("MAX_NEIGHBOUR_COUNT").unwrap().parse().unwrap();
+    let output_json = env::var("OUTPUT_JSON").unwrap_or("synth_graphs.json".into());
+
+    let mut results: Vec<Plain> = Vec::with_capacity(num_of_sim);
+    let mut rng = rand::rng();
     let start = Instant::now();
 
-    for i in 1..=NUM_OF_SIM {
-        let cols = rng.random_range(MIN_REGIONS_RANGE..MAX_REGIONS_RANGE);
-        let rows = rng.random_range(MIN_REGIONS_RANGE..MAX_REGIONS_RANGE);
-        let size = rng.random_range(MIN_REGION_SIZE..MAX_REGION_SIZE);
-        let v_size = rng.random_range(MIN_REGION_SIZE-1..size) / 2 - 5;
-        let v_num = rng.random_range(MIN_VERTEX_COUNT..MAX_VERTEX_COUNT);
-        let neighbours = rng.random_range(MIN_NEIGHBOUR_COUNT..MAX_NEIGHBOUR_COUNT);
+    for i in 1..=num_of_sim {
+        let cols = rng.random_range(min_regions..max_regions);
+        let rows = rng.random_range(min_regions..max_regions);
+        let size = rng.random_range(min_region_size..max_region_size);
+        let v_size = rng.random_range(min_region_size - 1..size) / 2 - 5;
+        let v_num = rng.random_range(min_vertex_count..max_vertex_count);
+        let neighbours = rng.random_range(min_neighbour_count..max_neighbour_count);
 
         let mut plain = Plain::new(
             cols,
@@ -40,16 +44,20 @@ fn main() {
 
         plain.run_sim();
         results.push(plain);
-        println!("[SIM] is done: {i}")
+        println!("[SIM] done: {i}");
     }
 
-    Plain::dump_many(results, "synth_graphs.json");
-    let duration = start.elapsed();
+    Plain::dump_many(results, &output_json);
 
+    let duration = start.elapsed();
     println!(
         "Simulations completed: {}\nTotal time: {:.2?}\nAverage time per simulation: {:.4?}",
-        NUM_OF_SIM,
+        num_of_sim,
         duration,
-        duration / NUM_OF_SIM as u32
+        duration / num_of_sim as u32
     );
+
+    println!("\nPress Enter to exit...");
+    let mut buffer = String::new();
+    let _ = std::io::stdin().read_line(&mut buffer);
 }

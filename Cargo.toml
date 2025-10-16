@@ -7,3 +7,4 @@ edition = "2024"
 rand = "0.10.0-rc.0"
 serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
+dotenvy = "0.15"
