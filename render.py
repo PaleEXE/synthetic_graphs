@@ -3,11 +3,11 @@ import json
 import os
 
 # === Load all graph data ===
-with open("synth_graphs.json") as f:
+with open("dataset/dbg.json") as f:
     data = json.load(f)
 
 # === Config ===
-OUTPUT_FOLDER = "renders"
+OUTPUT_FOLDER = "dbg"
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 BG_COLOR = (245, 245, 245)
@@ -15,8 +15,11 @@ NODE_COLOR = (255, 192, 203)
 NODE_BORDER = (255, 105, 180)
 EDGE_COLOR = (128, 128, 128)
 
+DBG = True  # 🔧 Set to True for debug bounding boxes
+
 pygame.init()
 clock = pygame.time.Clock()
+
 
 def render_graph(graph):
     vertices = graph["vertices"]
@@ -35,7 +38,11 @@ def render_graph(graph):
         h = e["height"] * SCREEN_HEIGHT
         v1, v2 = e["relationship"]
 
-        from_top = vertices[v1]["y"] < vertices[v2]["y"] if vertices[v1]["x"] <= vertices[v2]["x"] else vertices[v1]["y"] > vertices[v2]["y"]
+        from_top = (
+            vertices[v1]["y"] < vertices[v2]["y"]
+            if vertices[v1]["x"] <= vertices[v2]["x"]
+            else vertices[v1]["y"] > vertices[v2]["y"]
+        )
 
         if from_top:
             start_pos = (x, y)
@@ -46,6 +53,16 @@ def render_graph(graph):
 
         pygame.draw.line(screen, EDGE_COLOR, start_pos, end_pos, 2)
 
+        # 🔵 Draw edge debug rect
+        if DBG:
+            edge_rect = pygame.Rect(
+                min(start_pos[0], end_pos[0]),
+                min(start_pos[1], end_pos[1]),
+                max(abs(w), 1),
+                max(abs(h), 1)
+            )
+            pygame.draw.rect(screen, (0, 0, 255), edge_rect, 1)
+
     # Draw vertices
     for v in vertices:
         x = v["x"] * SCREEN_WIDTH
@@ -53,12 +70,15 @@ def render_graph(graph):
         w = v["width"] * SCREEN_WIDTH
         h = v["height"] * SCREEN_HEIGHT
 
-        # Node fill
-        pygame.draw.ellipse(screen, NODE_COLOR, pygame.Rect(x, y, w, h))
-        # Node border
-        pygame.draw.ellipse(screen, NODE_BORDER, pygame.Rect(x, y, w, h), 2)
+        node_rect = pygame.Rect(x, y, w, h)
+        pygame.draw.ellipse(screen, NODE_COLOR, node_rect)
+        pygame.draw.ellipse(screen, NODE_BORDER, node_rect, 2)
 
-        # Symbol
+        # 🟥 Draw node debug rect
+        if DBG:
+            pygame.draw.rect(screen, (255, 0, 0), node_rect, 1)
+
+        # Symbol text
         font = pygame.font.SysFont("Arial", max(12, int(h * 0.8)))
         text = font.render(v["symbol"], True, (0, 0, 0))
         text_rect = text.get_rect(center=(x + w / 2, y + h / 2))
@@ -69,10 +89,11 @@ def render_graph(graph):
     pygame.image.save(screen, filename)
     print(f"✅ Saved: {filename}")
 
+
 # === Render all graphs ===
 for i, graph in enumerate(data):
     render_graph(graph)
     clock.tick(10)  # small delay between renders
 
 pygame.quit()
-print("🎉 All graphs saved in the 'renders/' folder!")
+print(f"🎉 All graphs saved in the '{OUTPUT_FOLDER}' folder!")

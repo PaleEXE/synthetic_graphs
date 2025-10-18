@@ -266,7 +266,7 @@ class GraphRenderer:
 
 
 if __name__ == "__main__":
-    with open("synth_graphs.json") as f:
+    with open("dataset/synth_graphs.json") as f:
         json_data = json.load(f)[100]
 
     renderer = GraphRenderer()

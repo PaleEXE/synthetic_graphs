@@ -3,3 +3,6 @@
 .venv
 *.png
 .env
+*.zip
+push_dataset.py
+.idea
