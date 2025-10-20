@@ -1,19 +1,25 @@
 import pygame
 import json
 import os
+import math
 
 # === Load all graph data ===
-with open("dataset/dbg.json") as f:
+with open("dbg.json") as f:
     data = json.load(f)
 
 # === Config ===
 OUTPUT_FOLDER = "dbg"
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-BG_COLOR = (245, 245, 245)
-NODE_COLOR = (255, 192, 203)
-NODE_BORDER = (255, 105, 180)
-EDGE_COLOR = (128, 128, 128)
+# === Warm Color Palette ===
+BG_COLOR     = (255, 250, 240)   # soft warm cream background
+NODE_COLOR   = (255, 140, 66)    # rich warm orange
+NODE_BORDER  = (210, 90, 45)     # deeper burnt orange border
+EDGE_COLOR   = (180, 80, 60)     # warm brown-red edges
+
+# === Debug Colors ===
+DBG_EDGE     = (255, 70, 70)     # bright red for edge bounds
+DBG_VERT     = (70, 130, 180)    # steel blue for vertex bounds
 
 DBG = True  # 🔧 Set to True for debug bounding boxes
 
@@ -51,7 +57,7 @@ def render_graph(graph):
             start_pos = (x, y + h)
             end_pos = (x + w, y)
 
-        pygame.draw.line(screen, EDGE_COLOR, start_pos, end_pos, 2)
+        pygame.draw.line(screen, EDGE_COLOR, start_pos, end_pos, 4)
 
         # 🔵 Draw edge debug rect
         if DBG:
@@ -61,7 +67,7 @@ def render_graph(graph):
                 max(abs(w), 1),
                 max(abs(h), 1)
             )
-            pygame.draw.rect(screen, (0, 0, 255), edge_rect, 1)
+            pygame.draw.rect(screen, DBG_EDGE, edge_rect, 1)
 
     # Draw vertices
     for v in vertices:
@@ -76,10 +82,10 @@ def render_graph(graph):
 
         # 🟥 Draw node debug rect
         if DBG:
-            pygame.draw.rect(screen, (255, 0, 0), node_rect, 1)
+            pygame.draw.rect(screen, DBG_VERT, node_rect, 1)
 
         # Symbol text
-        font = pygame.font.SysFont("Arial", max(12, int(h * 0.8)))
+        font = pygame.font.SysFont("Arial", max(12, int(h * 0.6 / max(1, math.log(len(v["symbol"]) + 1, 3)))))
         text = font.render(v["symbol"], True, (0, 0, 0))
         text_rect = text.get_rect(center=(x + w / 2, y + h / 2))
         screen.blit(text, text_rect)
