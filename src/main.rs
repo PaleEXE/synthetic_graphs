@@ -1,8 +1,8 @@
 use crate::synth::Plain;
-use rand::Rng;
-use std::time::Instant;
 use dotenvy::dotenv;
+use rand::Rng;
 use std::env;
+use std::time::Instant;
 
 mod synth;
 
@@ -18,8 +18,13 @@ fn main() {
     let max_vertex_count: u16 = env::var("MAX_VERTEX_COUNT").unwrap().parse().unwrap();
     let min_neighbour_count: u16 = env::var("MIN_NEIGHBOUR_COUNT").unwrap().parse().unwrap();
     let max_neighbour_count: u16 = env::var("MAX_NEIGHBOUR_COUNT").unwrap().parse().unwrap();
+    let steps_weight: Vec<f32> = env::var("STEPS_WEIGHT")
+        .unwrap()
+        .split(',')
+        .map(|x| x.trim().parse::<f32>().unwrap())
+        .collect();
+    let with_cost = env::var("WITH_COST").unwrap() == "TRUE";
     let output_json = env::var("OUTPUT_JSON").unwrap_or("synth_graphs.json".into());
-
     let mut results: Vec<Plain> = Vec::with_capacity(num_of_sim);
     let mut rng = rand::rng();
     let start = Instant::now();
@@ -31,7 +36,7 @@ fn main() {
         let v_size = rng.random_range(min_region_size - 1..size) / 2 - 5;
         let v_num = rng.random_range(min_vertex_count..max_vertex_count);
         let neighbours = rng.random_range(min_neighbour_count..max_neighbour_count);
-
+        
         let mut plain = Plain::new(
             cols,
             rows,
@@ -39,7 +44,8 @@ fn main() {
             v_size,
             v_num,
             neighbours,
-            &[0.8, 0.8, 0.4, 0.2, 0.0, 0.0],
+            &steps_weight,
+            with_cost,
         );
 
         plain.run_sim();

@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#![allow(dead_code)]
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
 use serde::{Serialize, Serializer};
@@ -18,9 +18,9 @@ const DIRECTIONS: [(i32, i32); 8] = [
 ];
 
 const ALPHANUM_ARR: [u8; 62] = *b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-const SYMBOL_MAX_LEN: usize = 3;
+const SYMBOL_MAX_LEN: usize = 1;
 
-fn serialize_symbol<S>(symbol: &[u8; 3], serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_symbol<S>(symbol: &[u8; SYMBOL_MAX_LEN], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -31,6 +31,20 @@ where
         .map(|&b| b as char)
         .collect::<String>();
     serializer.serialize_str(&s)
+}
+
+struct VectorDelta {
+    length: f32,
+    dx: f32,
+    dy: f32,
+}
+
+#[derive(Serialize)]
+struct Rectangle {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
 }
 
 #[derive(Serialize, Clone)]
@@ -49,10 +63,9 @@ struct Vertex {
 struct Edge<'a> {
     id: usize,
     relationship: [u16; 2],
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+    #[serde(flatten)]
+    bound: Rectangle,
+    cost: Option<u16>,
     logic_label: &'a str,
 }
 
@@ -65,11 +78,12 @@ pub(crate) struct Plain {
     max_vertex_count: u16,
     max_neighbours_count: u16,
     weighted_index: WeightedIndex<f32>,
-    used_symbol: HashSet<[u8; 3]>,
+    used_symbol: HashSet<[u8; SYMBOL_MAX_LEN]>,
+    with_cost: bool,
 }
 
 impl Vertex {
-    fn new(id: u16, symbol: [u8; 3], x: f32, y: f32, radius: f32) -> Self {
+    fn new(id: u16, symbol: [u8; SYMBOL_MAX_LEN], x: f32, y: f32, radius: f32) -> Self {
         Self {
             id,
             symbol,
@@ -80,10 +94,42 @@ impl Vertex {
             neighbours: Vec::new(),
         }
     }
+
+    fn get_distance(&self, other: &Self) -> VectorDelta {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        VectorDelta {
+            length: dist,
+            dx,
+            dy,
+        }
+    }
+
+    fn get_edge_rect(&self, other: &Self, vd: &VectorDelta) -> Rectangle {
+        let ux = vd.dx / vd.length;
+        let uy = vd.dy / vd.length;
+
+        let start_x = self.x + ux * self.width / 2.0;
+        let start_y = self.y + uy * self.height / 2.0;
+        let end_x = other.x - ux * other.width / 2.0;
+        let end_y = other.y - uy * other.height / 2.0;
+
+        let min_x = start_x.min(end_x);
+        let min_y = start_y.min(end_y);
+        let max_x = start_x.max(end_x);
+        let max_y = start_y.max(end_y);
+
+        Rectangle {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        }
+    }
 }
 
 static mut PAIN_NUM: usize = 0;
-
 impl Plain {
     pub fn new(
         regions_cols: usize,
@@ -93,6 +139,7 @@ impl Plain {
         max_vertex_count: u16,
         max_neighbours_count: u16,
         weights: &[f32],
+        with_cost: bool,
     ) -> Self {
         let dist = WeightedIndex::new(weights).unwrap();
         let mut plain = Self {
@@ -105,13 +152,13 @@ impl Plain {
             vertex_radius,
             weighted_index: dist,
             used_symbol: HashSet::new(),
+            with_cost,
         };
 
         let pos = plain.rand_pos();
-        let symbol_len = plain.rng.random_range(1..=SYMBOL_MAX_LEN);
         let start = Vertex::new(
             0,
-            plain.rand_symbol(symbol_len as u8),
+            plain.rand_symbol(),
             (plain.region_size * pos.0 as u16) as f32,
             (plain.region_size * pos.1 as u16) as f32,
             plain.vertex_radius as f32,
@@ -121,10 +168,11 @@ impl Plain {
         plain
     }
 
-    fn rand_symbol(&mut self, len: u8) -> [u8; 3] {
-        let mut symbol = [0u8; 3];
+    fn rand_symbol(&mut self) -> [u8; SYMBOL_MAX_LEN] {
+        let mut symbol = [0u8; SYMBOL_MAX_LEN];
+        let len = self.rng.random_range(1..=SYMBOL_MAX_LEN);
         loop {
-            for i in 0..len as usize {
+            for i in 0..len {
                 symbol[i] = ALPHANUM_ARR[self.rng.random_range(0..ALPHANUM_ARR.len())];
             }
             if !self.used_symbol.contains(&symbol) {
@@ -155,11 +203,7 @@ impl Plain {
         let new_x = (self.vertices[prev_id].x / self.region_size as f32) as i32 + (dx * x_step);
         let new_y = (self.vertices[prev_id].y / self.region_size as f32) as i32 + (dy * y_step);
 
-        if new_x < 0
-            || new_y < 0
-            || new_x >= self.regions[0].len() as i32
-            || new_y >= self.regions.len() as i32
-        {
+        if self.inside_plain(new_x, new_y) {
             return None;
         }
 
@@ -181,23 +225,16 @@ impl Plain {
             return None;
         }
 
-        let x_offset = self
-            .rng
-            .random_range(0..self.region_size - self.vertex_radius * 2)
-            / 4;
-        let y_offset = self
-            .rng
-            .random_range(0..self.region_size - self.vertex_radius * 2)
-            / 4;
+        let x_offset = self.get_offset() as f32;
+        let y_offset = self.get_offset() as f32;
 
         let id = self.vertices.len() as u16;
-        let symbol_len = self.rng.random_range(1..=3);
 
         let new_vertex = Vertex::new(
             id,
-            self.rand_symbol(symbol_len),
-            grid_x as f32 * self.region_size as f32 + x_offset as f32,
-            grid_y as f32 * self.region_size as f32 + y_offset as f32,
+            self.rand_symbol(),
+            grid_x as f32 * self.region_size as f32 + x_offset,
+            grid_y as f32 * self.region_size as f32 + y_offset,
             self.vertex_radius as f32,
         );
 
@@ -208,6 +245,21 @@ impl Plain {
         self.vertices[id as usize].neighbours.push(prev_id as u16);
 
         Some(id)
+    }
+
+    fn inside_plain(&self, new_x: i32, new_y: i32) -> bool {
+        new_x < 0
+            || new_y < 0
+            || new_x >= self.regions[0].len() as i32
+            || new_y >= self.regions.len() as i32
+    }
+
+    fn get_offset(&mut self) -> u16 {
+        let x_offset = self
+            .rng
+            .random_range(0..self.region_size - self.vertex_radius * 2)
+            / 3;
+        x_offset
     }
 
     fn _run_sim(&mut self, current: usize) {
@@ -224,20 +276,20 @@ impl Plain {
         self._run_sim(0);
     }
 
-    pub(crate) fn dump(&self, file_path: &str) {
+    pub(crate) fn dump(&mut self, file_path: &str) {
         let json = self.create_json();
         std::fs::write(file_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     }
 
     pub(crate) fn dump_many(plains: Vec<Self>, file_path: &str) {
         let mut results: Vec<Value> = Vec::with_capacity(plains.len());
-        for plain in plains {
+        for mut plain in plains {
             results.push(plain.create_json())
         }
         std::fs::write(file_path, serde_json::to_string_pretty(&results).unwrap()).unwrap();
     }
 
-    fn create_json(&self) -> Value {
+    fn create_json(&mut self) -> Value {
         let img_width = self.regions[0].len() as f32 * self.region_size as f32;
         let img_height = self.regions.len() as f32 * self.region_size as f32;
 
@@ -248,34 +300,20 @@ impl Plain {
                 if v.id < n {
                     let neighbour = &self.vertices[n as usize];
 
-                    let dx = neighbour.x - v.x;
-                    let dy = neighbour.y - v.y;
-                    let dist = (dx * dx + dy * dy).sqrt();
+                    let vd = v.get_distance(neighbour);
 
-                    if dist < EPS {
+                    if vd.length < EPS {
                         continue;
                     }
 
-                    let ux = dx / dist;
-                    let uy = dy / dist;
-
-                    let start_x = v.x + ux * v.width / 2.0;
-                    let start_y = v.y + uy * v.height / 2.0;
-                    let end_x = neighbour.x - ux * neighbour.width / 2.0;
-                    let end_y = neighbour.y - uy * neighbour.height / 2.0;
-
-                    let min_x = start_x.min(end_x);
-                    let min_y = start_y.min(end_y);
-                    let max_x = start_x.max(end_x);
-                    let max_y = start_y.max(end_y);
+                    let bound = v.get_edge_rect(neighbour, &vd);
+                    let cost = if self.with_cost { Some(vd.length as u16 / 50 + self.rng.random_range(1..=3) as u16) } else { None };
 
                     let edge = Edge {
                         id: edges.len(),
                         relationship: [v.id, n],
-                        x: min_x,
-                        y: min_y,
-                        width: max_x - min_x,
-                        height: max_y - min_y,
+                        bound,
+                        cost,
                         logic_label: "edge",
                     };
                     edges.push(edge);
@@ -292,8 +330,8 @@ impl Plain {
         }
 
         for e in &edges {
-            min_x = min_x.min(e.x);
-            min_y = min_y.min(e.y);
+            min_x = min_x.min(e.bound.x);
+            min_y = min_y.min(e.bound.y);
         }
 
         let vertices_norm: Vec<_> = self
@@ -317,10 +355,10 @@ impl Plain {
         let edges_norm: Vec<_> = edges
             .into_iter()
             .map(|mut e| {
-                e.x = (e.x - min_x) / img_width;
-                e.y = (e.y - min_y) / img_height;
-                e.width /= img_width;
-                e.height /= img_height;
+                e.bound.x = (e.bound.x - min_x) / img_width;
+                e.bound.y = (e.bound.y - min_y) / img_height;
+                e.bound.width /= img_width;
+                e.bound.height /= img_height;
                 e
             })
             .collect();
