@@ -96,8 +96,8 @@ impl Vertex {
     }
 
     fn get_distance(&self, other: &Self) -> VectorDelta {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
+        let dx = other.x - self.x;
+        let dy = other.y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
         VectorDelta {
             length: dist,
@@ -197,7 +197,7 @@ impl Plain {
             return None;
         }
 
-        let dir = self.rng.random_range(0..=7);
+        let dir = self.rng.gen_range(0..DIRECTIONS.len());
         let (dx, dy) = DIRECTIONS[dir];
 
         let new_x = (self.vertices[prev_id].x / self.region_size as f32) as i32 + (dx * x_step);
@@ -211,18 +211,25 @@ impl Plain {
         let grid_y = new_y as usize;
 
         if let Some(existing_id) = self.regions[grid_y][grid_x] {
-            if !self.vertices[prev_id].neighbours.contains(&existing_id) {
-                self.vertices[prev_id].neighbours.push(existing_id);
-            }
-            if !self.vertices[existing_id as usize]
-                .neighbours
-                .contains(&(prev_id as u16))
+            if existing_id != prev_id as u16
+                && !self.is_path_blocked(
+                    &self.vertices[prev_id],
+                    &self.vertices[existing_id as usize],
+                )
             {
-                self.vertices[existing_id as usize]
+                if !self.vertices[prev_id].neighbours.contains(&existing_id) {
+                    self.vertices[prev_id].neighbours.push(existing_id);
+                }
+                if !self.vertices[existing_id as usize]
                     .neighbours
-                    .push(prev_id as u16);
+                    .contains(&(prev_id as u16))
+                {
+                    self.vertices[existing_id as usize]
+                        .neighbours
+                        .push(prev_id as u16);
+                }
             }
-            return None;
+            return None; // do not create a new vertex
         }
 
         let x_offset = self.get_offset() as f32;
@@ -230,7 +237,8 @@ impl Plain {
 
         let id = self.vertices.len() as u16;
 
-        let new_vertex = Vertex::new(
+        // create candidate but don't push yet
+        let candidate = Vertex::new(
             id,
             self.rand_symbol(),
             grid_x as f32 * self.region_size as f32 + x_offset,
@@ -238,13 +246,72 @@ impl Plain {
             self.vertex_radius as f32,
         );
 
-        self.regions[grid_y][grid_x] = Some(id);
-        self.vertices.push(new_vertex);
+        // If path from prev -> candidate intersects any existing vertex circle -> don't create
+        if self.is_path_blocked(&self.vertices[prev_id], &candidate) {
+            return None;
+        }
 
+        // commit candidate
+        self.regions[grid_y][grid_x] = Some(id);
+        self.vertices.push(candidate);
+
+        // add neighbours both ways
         self.vertices[prev_id].neighbours.push(id);
         self.vertices[id as usize].neighbours.push(prev_id as u16);
 
         Some(id)
+    }
+
+    /// Return true if any OTHER vertex circle intersects the segment start->end.
+    fn is_path_blocked(&self, start: &Vertex, end: &Vertex) -> bool {
+        let sx = start.x;
+        let sy = start.y;
+        let ex = end.x;
+        let ey = end.y;
+
+        let dx = ex - sx;
+        let dy = ey - sy;
+        let len_sq = dx * dx + dy * dy;
+
+        // Degenerate: zero-length segment — treat as blocked
+        if len_sq <= EPS {
+            return true;
+        }
+
+        for v in &self.vertices {
+            if v.id == start.id || v.id == end.id {
+                continue;
+            }
+
+            // Projection factor t of point v onto the infinite line
+            let t = ((v.x - sx) * dx + (v.y - sy) * dy) / len_sq;
+
+            // If the closest point on the infinite line is outside the segment, clamp
+            let t_clamped = if t < 0.0 {
+                0.0
+            } else if t > 1.0 {
+                1.0
+            } else {
+                t
+            };
+
+            // Closest point on the segment to v
+            let closest_x = sx + t_clamped * dx;
+            let closest_y = sy + t_clamped * dy;
+
+            let vx = v.x - closest_x;
+            let vy = v.y - closest_y;
+            let dist_sq = vx * vx + vy * vy;
+
+            // vertex radius (use vertex dimensions for safety)
+            let radius = (v.width.max(v.height)) * 0.5;
+
+            if dist_sq <= (radius + EPS) * (radius + EPS) {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn inside_plain(&self, new_x: i32, new_y: i32) -> bool {
@@ -307,7 +374,11 @@ impl Plain {
                     }
 
                     let bound = v.get_edge_rect(neighbour, &vd);
-                    let cost = if self.with_cost { Some(vd.length as u16 / 50 + self.rng.random_range(1..=3) as u16) } else { None };
+                    let cost = if self.with_cost {
+                        Some(vd.length as u16 / 50 + self.rng.random_range(1..=3) as u16)
+                    } else {
+                        None
+                    };
 
                     let edge = Edge {
                         id: edges.len(),

@@ -4,5 +4,5 @@
 *.png
 .env
 *.zip
-push_dataset.py
 .idea
+synth_graphs*/
