@@ -5,9 +5,9 @@ import math
 import cv2
 import numpy as np
 
-INPUT_JSON = "synth_graphs_2.json"
-OUTPUT_FOLDER = "synth_graphs_2"
-OUTPUT_COCO = "synth_graphs_coco_2.json"
+INPUT_JSON = "val.json"
+OUTPUT_FOLDER = "val"
+OUTPUT_COCO = "val_coco.json"
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 BG_COLOR = (255, 250, 240)
@@ -18,7 +18,7 @@ COST_COLOR = (120, 60, 40)
 
 DBG_EDGE = (255, 70, 70)
 DBG_VERT = (70, 130, 180)
-DBG = True  # Set True to draw debug bounding boxes
+DBG = False  # Set True to draw debug bounding boxes
 
 pygame.init()
 clock = pygame.time.Clock()

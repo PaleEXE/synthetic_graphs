@@ -25,6 +25,7 @@ fn main() {
         .collect();
     let with_cost = env::var("WITH_COST").unwrap() == "TRUE";
     let output_json = env::var("OUTPUT_JSON").unwrap_or("synth_graphs.json".into());
+    let image_name = env::var("IMAGE_NAME").unwrap_or("Synth_Graphs".into());
     let mut results: Vec<Plain> = Vec::with_capacity(num_of_sim);
     let mut rng = rand::rng();
     let start = Instant::now();
@@ -45,6 +46,7 @@ fn main() {
             v_num,
             neighbours,
             &steps_weight,
+            &image_name,
             with_cost,
         );
 

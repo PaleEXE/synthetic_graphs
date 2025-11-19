@@ -69,7 +69,7 @@ struct Edge<'a> {
     logic_label: &'a str,
 }
 
-pub(crate) struct Plain {
+pub(crate) struct Plain<'a> {
     regions: Vec<Vec<Option<u16>>>,
     vertices: Vec<Vertex>,
     rng: ThreadRng,
@@ -79,6 +79,7 @@ pub(crate) struct Plain {
     max_neighbours_count: u16,
     weighted_index: WeightedIndex<f32>,
     used_symbol: HashSet<[u8; SYMBOL_MAX_LEN]>,
+    image_name: &'a str,
     with_cost: bool,
 }
 
@@ -130,7 +131,7 @@ impl Vertex {
 }
 
 static mut PAIN_NUM: usize = 0;
-impl Plain {
+impl<'a> Plain<'a> {
     pub fn new(
         regions_cols: usize,
         regions_rows: usize,
@@ -139,6 +140,7 @@ impl Plain {
         max_vertex_count: u16,
         max_neighbours_count: u16,
         weights: &[f32],
+        image_name: &'a str,
         with_cost: bool,
     ) -> Self {
         let dist = WeightedIndex::new(weights).unwrap();
@@ -152,6 +154,7 @@ impl Plain {
             vertex_radius,
             weighted_index: dist,
             used_symbol: HashSet::new(),
+            image_name,
             with_cost,
         };
 
@@ -197,7 +200,7 @@ impl Plain {
             return None;
         }
 
-        let dir = self.rng.gen_range(0..DIRECTIONS.len());
+        let dir = self.rng.random_range(0..DIRECTIONS.len());
         let (dx, dy) = DIRECTIONS[dir];
 
         let new_x = (self.vertices[prev_id].x / self.region_size as f32) as i32 + (dx * x_step);
@@ -435,7 +438,7 @@ impl Plain {
             .collect();
 
         let json = serde_json::json!({
-            "filename": format!("Synth_Graph_{}.png", unsafe { PAIN_NUM + 1 }),
+            "filename": format!("{}_{}.png",self.image_name, unsafe { PAIN_NUM + 1 }),
             "img_width": img_width as u32,
             "img_height": img_height as u32,
             "vertices": vertices_norm,
