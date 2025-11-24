@@ -131,6 +131,7 @@ impl Vertex {
 }
 
 static mut PAIN_NUM: usize = 0;
+pub static mut SIM_NUM: usize = 0;
 impl<'a> Plain<'a> {
     pub fn new(
         regions_cols: usize,
@@ -437,8 +438,14 @@ impl<'a> Plain<'a> {
             })
             .collect();
 
+        let sim_num: usize = unsafe { SIM_NUM };
+        let pain_num: usize = unsafe { PAIN_NUM };
+
+        let image_num = format!("{:0width$}", pain_num, width = sim_num.to_string().len());
+        let file_name = format!("{}_{}.png", self.image_name, image_num);
+
         let json = serde_json::json!({
-            "filename": format!("{}_{}.png",self.image_name, unsafe { PAIN_NUM + 1 }),
+            "filename": file_name,
             "img_width": img_width as u32,
             "img_height": img_height as u32,
             "vertices": vertices_norm,

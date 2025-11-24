@@ -1,4 +1,4 @@
-use crate::synth::Plain;
+use crate::synth::{Plain, SIM_NUM};
 use dotenvy::dotenv;
 use rand::Rng;
 use std::env;
@@ -10,6 +10,8 @@ fn main() {
     dotenv().ok(); // load .env file automatically
 
     let num_of_sim: usize = env::var("NUM_OF_SIM").unwrap().parse().unwrap();
+    unsafe { SIM_NUM = num_of_sim; }
+
     let min_regions: usize = env::var("MIN_REGIONS_RANGE").unwrap().parse().unwrap();
     let max_regions: usize = env::var("MAX_REGIONS_RANGE").unwrap().parse().unwrap();
     let min_region_size: u16 = env::var("MIN_REGION_SIZE").unwrap().parse().unwrap();
@@ -37,7 +39,7 @@ fn main() {
         let v_size = rng.random_range(min_region_size - 1..size) / 2 - 5;
         let v_num = rng.random_range(min_vertex_count..max_vertex_count);
         let neighbours = rng.random_range(min_neighbour_count..max_neighbour_count);
-        
+
         let mut plain = Plain::new(
             cols,
             rows,

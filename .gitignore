@@ -5,4 +5,5 @@
 .env
 *.zip
 .idea
+*.txt
 synth_graphs*/
