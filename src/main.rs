@@ -1,4 +1,4 @@
-use crate::synth::{Plain, SIM_NUM};
+use crate::synth::{Plain, SIM_NUM, SymbolPool};
 use dotenvy::dotenv;
 use rand::Rng;
 use std::env;
@@ -10,7 +10,9 @@ fn main() {
     dotenv().ok(); // load .env file automatically
 
     let num_of_sim: usize = env::var("NUM_OF_SIM").unwrap().parse().unwrap();
-    unsafe { SIM_NUM = num_of_sim; }
+    unsafe {
+        SIM_NUM = num_of_sim;
+    }
 
     let min_regions: usize = env::var("MIN_REGIONS_RANGE").unwrap().parse().unwrap();
     let max_regions: usize = env::var("MAX_REGIONS_RANGE").unwrap().parse().unwrap();
@@ -25,6 +27,8 @@ fn main() {
         .split(',')
         .map(|x| x.trim().parse::<f32>().unwrap())
         .collect();
+
+    let symbols_pool = SymbolPool::from_str(&env::var("SYMBOL_POOL").unwrap().to_lowercase());
     let with_cost = env::var("WITH_COST").unwrap() == "TRUE";
     let output_json = env::var("OUTPUT_JSON").unwrap_or("synth_graphs.json".into());
     let image_name = env::var("IMAGE_NAME").unwrap_or("Synth_Graphs".into());
@@ -50,6 +54,7 @@ fn main() {
             &steps_weight,
             &image_name,
             with_cost,
+            symbols_pool,
         );
 
         plain.run_sim();
@@ -66,8 +71,4 @@ fn main() {
         duration,
         duration / num_of_sim as u32
     );
-
-    println!("\nPress Enter to exit...");
-    let mut buffer = String::new();
-    let _ = std::io::stdin().read_line(&mut buffer);
 }

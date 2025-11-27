@@ -17,7 +17,12 @@ const DIRECTIONS: [(i32, i32); 8] = [
     (-1, 1),
 ];
 
-const ALPHANUM_ARR: [u8; 62] = *b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+// static slices for each pool
+const NUMS: &[u8] = b"0123456789";
+const UPPER_ALPHA: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const LOWER_ALPHA: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+const ALPHA: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const ALPHANUM: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const SYMBOL_MAX_LEN: usize = 1;
 
 fn serialize_symbol<S>(symbol: &[u8; SYMBOL_MAX_LEN], serializer: S) -> Result<S::Ok, S::Error>
@@ -31,6 +36,15 @@ where
         .map(|&b| b as char)
         .collect::<String>();
     serializer.serialize_str(&s)
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum SymbolPool {
+    Num,
+    Alpha,
+    UpperAlpha,
+    LowerAlpha,
+    AlphaNum,
 }
 
 struct VectorDelta {
@@ -81,6 +95,31 @@ pub(crate) struct Plain<'a> {
     used_symbol: HashSet<[u8; SYMBOL_MAX_LEN]>,
     image_name: &'a str,
     with_cost: bool,
+    // NEW: mood for the whole Plain — all symbols come from this pool
+    symbol_pool: SymbolPool,
+}
+
+impl SymbolPool {
+    fn chars_pool(self) -> &'static [u8] {
+        match self {
+            SymbolPool::Num => NUMS,
+            SymbolPool::Alpha => ALPHA,
+            SymbolPool::UpperAlpha => UPPER_ALPHA,
+            SymbolPool::LowerAlpha => LOWER_ALPHA,
+            SymbolPool::AlphaNum => ALPHANUM,
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "num" => SymbolPool::Num,
+            "alpha" => SymbolPool::Alpha,
+            "upperalpha" => SymbolPool::UpperAlpha,
+            "loweralpha" => SymbolPool::LowerAlpha,
+            "alphanum" => SymbolPool::AlphaNum,
+            _ => panic!("Invalid symbol pool: {}", s),
+        }
+    }
 }
 
 impl Vertex {
@@ -143,12 +182,15 @@ impl<'a> Plain<'a> {
         weights: &[f32],
         image_name: &'a str,
         with_cost: bool,
+        symbol_pool: SymbolPool,
     ) -> Self {
         let dist = WeightedIndex::new(weights).unwrap();
+        let mut rng = rand::rng();
+
         let mut plain = Self {
             regions: vec![vec![None; regions_cols]; regions_rows],
             vertices: Vec::new(),
-            rng: rand::rng(),
+            rng,
             max_vertex_count,
             max_neighbours_count,
             region_size,
@@ -157,6 +199,7 @@ impl<'a> Plain<'a> {
             used_symbol: HashSet::new(),
             image_name,
             with_cost,
+            symbol_pool,
         };
 
         let pos = plain.rand_pos();
@@ -172,17 +215,19 @@ impl<'a> Plain<'a> {
         plain
     }
 
+    /// Return a random symbol taken only from this Plain's `symbol_pool`.
     fn rand_symbol(&mut self) -> [u8; SYMBOL_MAX_LEN] {
         let mut symbol = [0u8; SYMBOL_MAX_LEN];
-        let len = self.rng.random_range(1..=SYMBOL_MAX_LEN);
+        // since SYMBOL_MAX_LEN == 1 in your code, pick one byte from the pool
+        let pool_chars = self.symbol_pool.chars_pool();
         loop {
-            for i in 0..len {
-                symbol[i] = ALPHANUM_ARR[self.rng.random_range(0..ALPHANUM_ARR.len())];
-            }
+            let idx = self.rng.random_range(0..pool_chars.len());
+            symbol[0] = pool_chars[idx];
             if !self.used_symbol.contains(&symbol) {
                 self.used_symbol.insert(symbol);
                 break;
             }
+            // otherwise try again (unique per-plain guarantee)
         }
         symbol
     }

@@ -31,7 +31,7 @@ pygame.init()
 # ===============================
 def random_gray():
     """Random gray color for nodes/edges"""
-    base = random.randint(50, 200)
+    base = random.randint(50, 150)
 
     def noise():
         return min(255, max(0, base + random.randint(-15, 15)))
