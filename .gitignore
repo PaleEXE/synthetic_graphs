@@ -7,3 +7,5 @@
 .idea
 *.txt
 synth_graphs*/
+.venv
+venv
