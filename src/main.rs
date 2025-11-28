@@ -6,32 +6,54 @@ use std::time::Instant;
 
 mod synth;
 
-fn main() {
-    dotenv().ok(); // load .env file automatically
+fn parse_env<T: std::str::FromStr>(key: &str) -> T {
+    env::var(key)
+        .unwrap_or_else(|_| panic!("Environment variable {key} not set"))
+        .parse()
+        .unwrap_or_else(|_| panic!("Failed to parse {key}"))
+}
 
-    let num_of_sim: usize = env::var("NUM_OF_SIM").unwrap().parse().unwrap();
+fn parse_env_vec<T: std::str::FromStr>(key: &str) -> Vec<T> {
+    env::var(key)
+        .unwrap_or_else(|_| panic!("Environment variable {key} not set"))
+        .split(',')
+        .map(|x| {
+            x.trim()
+                .parse::<T>()
+                .unwrap_or_else(|_| panic!("Failed to parse float"))
+        })
+        .collect()
+}
+
+fn main() {
+    dotenv().ok();
+
+    let num_of_sim: usize = parse_env("NUM_OF_SIM");
     unsafe {
         SIM_NUM = num_of_sim;
     }
 
-    let min_regions: usize = env::var("MIN_REGIONS_RANGE").unwrap().parse().unwrap();
-    let max_regions: usize = env::var("MAX_REGIONS_RANGE").unwrap().parse().unwrap();
-    let min_region_size: u16 = env::var("MIN_REGION_SIZE").unwrap().parse().unwrap();
-    let max_region_size: u16 = env::var("MAX_REGION_SIZE").unwrap().parse().unwrap();
-    let min_vertex_count: u16 = env::var("MIN_VERTEX_COUNT").unwrap().parse().unwrap();
-    let max_vertex_count: u16 = env::var("MAX_VERTEX_COUNT").unwrap().parse().unwrap();
-    let min_neighbour_count: u16 = env::var("MIN_NEIGHBOUR_COUNT").unwrap().parse().unwrap();
-    let max_neighbour_count: u16 = env::var("MAX_NEIGHBOUR_COUNT").unwrap().parse().unwrap();
-    let steps_weight: Vec<f32> = env::var("STEPS_WEIGHT")
-        .unwrap()
-        .split(',')
-        .map(|x| x.trim().parse::<f32>().unwrap())
-        .collect();
+    let min_regions: usize = parse_env("MIN_REGIONS_RANGE");
+    let max_regions: usize = parse_env("MAX_REGIONS_RANGE");
+    let min_region_size: u16 = parse_env("MIN_REGION_SIZE");
+    let max_region_size: u16 = parse_env("MAX_REGION_SIZE");
+    let min_vertex_count: u16 = parse_env("MIN_VERTEX_COUNT");
+    let max_vertex_count: u16 = parse_env("MAX_VERTEX_COUNT");
+    let min_neighbour_count: u16 = parse_env("MIN_NEIGHBOUR_COUNT");
+    let max_neighbour_count: u16 = parse_env("MAX_NEIGHBOUR_COUNT");
 
-    let symbols_pool = SymbolPool::from_str(&env::var("SYMBOL_POOL").unwrap().to_lowercase());
-    let with_cost = env::var("WITH_COST").unwrap() == "TRUE";
-    let output_json = env::var("OUTPUT_JSON").unwrap_or("synth_graphs.json".into());
-    let image_name = env::var("IMAGE_NAME").unwrap_or("Synth_Graphs".into());
+    let steps_weight: Vec<f32> = parse_env_vec("STEPS_WEIGHT");
+    let symbols_pools: Vec<String> = parse_env_vec("SYMBOLS_POOLS");
+
+    let symbols_pools = symbols_pools
+        .iter()
+        .map(|s| SymbolPool::from_str(&s.to_lowercase()))
+        .collect::<Vec<SymbolPool>>();
+
+    let with_cost = env::var("WITH_COST").unwrap_or_default().to_uppercase() == "TRUE";
+    let output_json = env::var("OUTPUT_JSON").unwrap_or_else(|_| "synth_graphs.json".into());
+    let image_name = env::var("IMAGE_NAME").unwrap_or_else(|_| "Synth_Graphs".into());
+
     let mut results: Vec<Plain> = Vec::with_capacity(num_of_sim);
     let mut rng = rand::rng();
     let start = Instant::now();
@@ -43,6 +65,9 @@ fn main() {
         let v_size = rng.random_range(min_region_size - 1..size) / 2 - 5;
         let v_num = rng.random_range(min_vertex_count..max_vertex_count);
         let neighbours = rng.random_range(min_neighbour_count..max_neighbour_count);
+
+        let rand_pool = rng.random_range(0..symbols_pools.len());
+        let symbols_pool = symbols_pools[rand_pool];
 
         let mut plain = Plain::new(
             cols,
