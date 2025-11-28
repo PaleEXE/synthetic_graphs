@@ -8,7 +8,7 @@ import numpy as np
 import pygame
 
 # ===============================
-# CONSTANTS (ALL IMPORTANT VALUES)
+# CONSTANTS
 # ===============================
 SPLITS = ["train", "val", "test"]
 INPUT_JSONS = {"train": "train.json", "val": "val.json", "test": "test.json"}
@@ -33,7 +33,6 @@ pygame.init()
 # COLOR FUNCTIONS
 # ===============================
 def random_gray():
-    """Random gray color for nodes/edges"""
     base = random.randint(50, 150)
 
     def noise():
@@ -43,7 +42,6 @@ def random_gray():
 
 
 def random_light_gray():
-    """Light gray background"""
     base = random.randint(200, 255)
 
     def noise():
@@ -76,7 +74,6 @@ def extract_contours(mask):
 
 
 def add_salt_pepper(surf):
-    """Add salt-and-pepper noise to pygame surface safely."""
     arr = pygame.surfarray.array3d(surf)
     arr = np.transpose(arr, (1, 0, 2))
     h, w, _ = arr.shape
@@ -97,18 +94,29 @@ def add_salt_pepper(surf):
 
 
 def get_bezier_points(p0, p1, p2, num_points):
-    """
-    Calculates points along a quadratic Bézier curve.
-    p0 (start), p1 (control), p2 (end) are tuples (x, y).
-    """
     points = []
     for i in range(num_points):
         t = i / (num_points - 1)
-        # Quadratic Bézier formula: B(t) = (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
         x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t**2 * p2[0]
         y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t**2 * p2[1]
         points.append((int(x), int(y)))
     return points
+
+
+def ellipse_border_point(cx, cy, w, h, target_x, target_y):
+    """
+    Returns the point on the border of the ellipse (cx,cy,w,h) towards target (target_x,target_y)
+    """
+    dx = target_x - cx
+    dy = target_y - cy
+    if dx == 0 and dy == 0:
+        return cx, cy
+    angle = math.atan2(dy, dx)
+    rx = w / 2
+    ry = h / 2
+    border_x = cx + rx * math.cos(angle)
+    border_y = cy + ry * math.sin(angle)
+    return int(border_x), int(border_y)
 
 
 # ===============================
@@ -154,29 +162,38 @@ for split in SPLITS:
 
         vertex_map = {v["id"]: v for v in vertices}
 
-        # ---- create pygame surface ----
         screen = pygame.Surface((width, height))
         screen.fill(BG_COLOR)
 
-        # NOTE: edge_mask removed. Segmentation is now performed per-edge.
-
-        # ---- draw edges (CURVED) and generate isolated masks ----
+        # ---- draw edges ----
         for e in edges:
             v1_id, v2_id = e["relationship"]
-            v1_data = vertex_map[v1_id]
-            v2_data = vertex_map[v2_id]
+            v1 = vertex_map[v1_id]
+            v2 = vertex_map[v2_id]
 
-            # 1. Determine Start and End points (centers of the nodes)
-            v1_center_x = int(v1_data["x"] * width + v1_data["width"] * width / 2)
-            v1_center_y = int(v1_data["y"] * height + v1_data["height"] * height / 2)
-            v2_center_x = int(v2_data["x"] * width + v2_data["width"] * width / 2)
-            v2_center_y = int(v2_data["y"] * height + v2_data["height"] * height / 2)
+            v1_cx = int(v1["x"] * width + v1["width"] * width / 2)
+            v1_cy = int(v1["y"] * height + v1["height"] * height / 2)
+            v2_cx = int(v2["x"] * width + v2["width"] * width / 2)
+            v2_cy = int(v2["y"] * height + v2["height"] * height / 2)
 
-            start = (v1_center_x, v1_center_y)
-            end = (v2_center_x, v2_center_y)
+            # start/end at ellipse border
+            start = ellipse_border_point(
+                v1_cx,
+                v1_cy,
+                int(v1["width"] * width),
+                int(v1["height"] * height),
+                v2_cx,
+                v2_cy,
+            )
+            end = ellipse_border_point(
+                v2_cx,
+                v2_cy,
+                int(v2["width"] * width),
+                int(v2["height"] * height),
+                v1_cx,
+                v1_cy,
+            )
 
-            # 2. Calculate Control Point (C)
-            # Edge bounding box in pixel coordinates
             x = int(e["x"] * width)
             y = int(e["y"] * height)
             w = int(e["width"] * width)
@@ -185,38 +202,44 @@ for split in SPLITS:
             mid_x = x + w / 2
             mid_y = y + h / 2
 
-            # Random offset based on bounding box size
             max_offset_x = w * MAX_CURVE_OFFSET_FACTOR
             max_offset_y = h * MAX_CURVE_OFFSET_FACTOR
 
-            # Ensure a minimum 5px offset for visible curvature, maxing out at the calculated factor
             offset_x = random.uniform(-max(5, max_offset_x), max(5, max_offset_x))
             offset_y = random.uniform(-max(5, max_offset_y), max(5, max_offset_y))
-
-            # Control point is the center of the edge bbox + random offset
             ctrl = (int(mid_x + offset_x), int(mid_y + offset_y))
 
-            # 3. Generate Bézier Curve Points
             curve_points = get_bezier_points(start, ctrl, end, CURVE_RESOLUTION)
-
-            # 4. Draw curve on Pygame screen (Visual rendering)
             if len(curve_points) > 1:
                 pygame.draw.lines(
                     screen, EDGE_COLOR, False, curve_points, EDGE_THICKNESS
                 )
 
-                # 5. Draw curve on TEMPORARY, ISOLATED OpenCV mask for annotation
                 temp_edge_mask = np.zeros((height, width), dtype=np.uint8)
                 for i in range(len(curve_points) - 1):
-                    pt1 = curve_points[i]
-                    pt2 = curve_points[i + 1]
-                    cv2.line(temp_edge_mask, pt1, pt2, 255, EDGE_THICKNESS)
+                    cv2.line(
+                        temp_edge_mask,
+                        curve_points[i],
+                        curve_points[i + 1],
+                        255,
+                        EDGE_THICKNESS,
+                    )
 
-                # 6. Extract contours for this SINGLE edge instance and add to COCO
                 polys = extract_contours(temp_edge_mask)
+
                 for poly in polys:
                     xs = [p[0] for p in poly]
                     ys = [p[1] for p in poly]
+                    if DBG:
+                        pygame.draw.rect(
+                            screen,
+                            (255, 0, 0),
+                            pygame.Rect(
+                                min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+                            ),
+                            2,
+                        )
+
                     coco["annotations"].append(
                         {
                             "id": ann_id,
@@ -235,7 +258,7 @@ for split in SPLITS:
                     )
                     ann_id += 1
 
-        # ---- draw nodes (to ensure nodes are drawn over edges) ----
+        # ---- draw nodes ----
         for v in vertices:
             x = int(v["x"] * width)
             y = int(v["y"] * height)
@@ -245,7 +268,9 @@ for split in SPLITS:
             pygame.draw.ellipse(screen, NODE_COLOR, rect)
             pygame.draw.ellipse(screen, NODE_BORDER, rect, NODE_THICKNESS)
 
-            # symbol text
+            if DBG:
+                pygame.draw.rect(screen, (0, 0, 255), rect, 2)
+
             font_size = max(
                 12, int(h * 0.6 / max(1, math.log(len(v["symbol"]) + 1, 3)))
             )
@@ -254,18 +279,7 @@ for split in SPLITS:
             text_rect = text.get_rect(center=(x + w / 2, y + h / 2))
             screen.blit(text, text_rect)
 
-        # ---- noise ----
-        screen = add_salt_pepper(screen)
-        # ---- save image ----
-        image_path = os.path.join(image_folder, img_filename)
-        pygame.image.save(screen, image_path)
-
-        # ---- NODE MASKS ----
-        for v in vertices:
-            x = int(v["x"] * width)
-            y = int(v["y"] * height)
-            w = int(v["width"] * width)
-            h = int(v["height"] * height)
+            # Node mask for COCO
             node_mask = np.zeros((height, width), dtype=np.uint8)
             cv2.ellipse(
                 node_mask,
@@ -281,6 +295,7 @@ for split in SPLITS:
             for poly in polys:
                 xs = [p[0] for p in poly]
                 ys = [p[1] for p in poly]
+
                 coco["annotations"].append(
                     {
                         "id": ann_id,
@@ -299,22 +314,20 @@ for split in SPLITS:
                 )
                 ann_id += 1
 
-        # ---- EDGE MASKS: Logic moved inside the edge loop to ensure isolation. The previous block is removed.
+        screen = add_salt_pepper(screen)
+        image_path = os.path.join(image_folder, img_filename)
+        pygame.image.save(screen, image_path)
 
-        # ---- image info ----
         coco["images"].append(
             {"id": img_id, "file_name": img_filename, "width": width, "height": height}
         )
-
         img_id += 1
         print(f"✓ {split}: {img_filename}")
 
-    # ---- save COCO JSON ----
     out_json = os.path.join(OUTPUT_ANNOTATIONS, f"{split}_coco.json")
     with open(out_json, "w") as f:
         json.dump(coco, f)
     print(f"🔥 Saved: {out_json}")
-
 
 pygame.quit()
 print("🎉 All COCO datasets generated successfully!")
